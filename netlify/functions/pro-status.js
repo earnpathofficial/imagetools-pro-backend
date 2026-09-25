@@ -1,26 +1,27 @@
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { getStore } from "@netlify/blobs";
 
-function response(statusCode, body) {
-  return {
-    statusCode,
+function jsonResponse(status, body) {
+  return new Response(JSON.stringify(body), {
+    status,
     headers: {
       "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  };
+    }
+  });
 }
 
-export async function handler(event) {
-  if (event.httpMethod === "GET") {
-    return response(200, {
+export default async function handler(request) {
+  // Health check
+  if (request.method === "GET") {
+    return jsonResponse(200, {
       status: "online",
       service: "ImageTools Pro Backend"
     });
   }
 
-  if (event.httpMethod !== "POST") {
-    return response(405, {
+  // Paddle webhooks must use POST
+  if (request.method !== "POST") {
+    return jsonResponse(405, {
       error: "Method not allowed"
     });
   }
@@ -30,31 +31,34 @@ export async function handler(event) {
 
     if (!secret) {
       console.error("PADDLE_WEBHOOK_SECRET is missing");
-      return response(500, {
+
+      return jsonResponse(500, {
         error: "Server configuration error"
       });
     }
 
     const signature =
-      event.headers["paddle-signature"] ||
-      event.headers["Paddle-Signature"];
+      request.headers.get("paddle-signature");
 
     if (!signature) {
-      return response(400, {
+      return jsonResponse(400, {
         error: "Missing Paddle signature"
       });
     }
 
-    const rawBody = event.isBase64Encoded
-      ? Buffer.from(event.body, "base64").toString("utf8")
-      : event.body || "";
+    // Keep the exact raw request body for Paddle signature verification.
+    const rawBody = await request.text();
 
     const parts = signature.split(";");
-    const timestampPart = parts.find((part) => part.startsWith("ts="));
-    const hashPart = parts.find((part) => part.startsWith("h1="));
+    const timestampPart = parts.find((part) =>
+      part.startsWith("ts=")
+    );
+    const hashPart = parts.find((part) =>
+      part.startsWith("h1=")
+    );
 
     if (!timestampPart || !hashPart) {
-      return response(400, {
+      return jsonResponse(400, {
         error: "Invalid Paddle signature"
       });
     }
@@ -62,10 +66,13 @@ export async function handler(event) {
     const timestamp = timestampPart.substring(3);
     const receivedHash = hashPart.substring(3);
 
-    const age = Math.abs(Date.now() / 1000 - Number(timestamp));
+    // Reject old webhook requests.
+    const age = Math.abs(
+      Date.now() / 1000 - Number(timestamp)
+    );
 
     if (!Number.isFinite(age) || age > 5) {
-      return response(401, {
+      return jsonResponse(401, {
         error: "Expired webhook"
       });
     }
@@ -83,16 +90,19 @@ export async function handler(event) {
       receivedBuffer.length !== expectedBuffer.length ||
       !timingSafeEqual(receivedBuffer, expectedBuffer)
     ) {
-      return response(401, {
+      return jsonResponse(401, {
         error: "Invalid webhook signature"
       });
     }
 
     const data = JSON.parse(rawBody);
 
+    // Netlify automatically provides the Blobs credentials
+    // when getStore() runs inside a Netlify Function.
     const store = getStore("paddle-events");
 
-    const eventId = data.event_id || `event-${Date.now()}`;
+    const eventId =
+      data.event_id || `event-${Date.now()}`;
 
     await store.setJSON(eventId, {
       receivedAt: new Date().toISOString(),
@@ -101,18 +111,20 @@ export async function handler(event) {
       data: data.data || null
     });
 
-    console.log("Verified Paddle webhook:", eventId, data.event_type);
+    console.log(
+      "Verified Paddle webhook:",
+      eventId,
+      data.event_type
+    );
 
-    return response(200, {
+    return jsonResponse(200, {
       success: true
     });
   } catch (error) {
     console.error("Webhook processing error:", error);
 
-    return response(500, {
-      error: "Webhook processing failed",
-      debug: error instanceof Error ? error.message : String(error),
-      type: error instanceof Error ? error.name : typeof error
+    return jsonResponse(500, {
+      error: "Webhook processing failed"
     });
   }
 }
