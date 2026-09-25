@@ -12,7 +12,6 @@ function response(statusCode, body) {
 }
 
 export async function handler(event) {
-  // Simple health check
   if (event.httpMethod === "GET") {
     return response(200, {
       status: "online",
@@ -20,7 +19,6 @@ export async function handler(event) {
     });
   }
 
-  // Paddle webhooks must use POST
   if (event.httpMethod !== "POST") {
     return response(405, {
       error: "Method not allowed"
@@ -64,7 +62,6 @@ export async function handler(event) {
     const timestamp = timestampPart.substring(3);
     const receivedHash = hashPart.substring(3);
 
-    // Reject old webhook requests to help prevent replay attacks.
     const age = Math.abs(Date.now() / 1000 - Number(timestamp));
 
     if (!Number.isFinite(age) || age > 5) {
@@ -113,7 +110,9 @@ export async function handler(event) {
     console.error("Webhook processing error:", error);
 
     return response(500, {
-      error: "Webhook processing failed"
+      error: "Webhook processing failed",
+      debug: error instanceof Error ? error.message : String(error),
+      type: error instanceof Error ? error.name : typeof error
     });
   }
 }
