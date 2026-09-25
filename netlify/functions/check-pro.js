@@ -17,11 +17,14 @@ export default async function handler(request) {
   }
 
   try {
-    const { subscriptionId } = await request.json();
+    const body = await request.json();
 
-    if (!subscriptionId) {
+    const customerId = body.customerId;
+    const subscriptionId = body.subscriptionId;
+
+    if (!customerId && !subscriptionId) {
       return jsonResponse(400, {
-        error: "Missing subscriptionId"
+        error: "Missing customerId or subscriptionId"
       });
     }
 
@@ -34,18 +37,31 @@ export default async function handler(request) {
         type: "json"
       });
 
-      if (
-        event?.data?.id === subscriptionId &&
-        event?.data?.status
-      ) {
-        const status = event.data.status;
+      const data = event?.data;
+
+      if (!data) {
+        continue;
+      }
+
+      const matchesSubscription =
+        subscriptionId &&
+        data.id === subscriptionId;
+
+      const matchesCustomer =
+        customerId &&
+        data.custom_data?.imagetools_customer_id === customerId;
+
+      if (matchesSubscription || matchesCustomer) {
+        const status = data.status || null;
 
         return jsonResponse(200, {
           isPro:
             status === "active" ||
             status === "trialing",
           status,
-          subscriptionId
+          subscriptionId: data.id || null,
+          customerId:
+            data.custom_data?.imagetools_customer_id || null
         });
       }
     }
