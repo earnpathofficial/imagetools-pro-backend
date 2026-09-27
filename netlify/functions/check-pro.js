@@ -1,5 +1,5 @@
 import { getStore } from "@netlify/blobs";
-
+// ImageTools Pro check-pro v2
 function jsonResponse(status, body) {
   return new Response(JSON.stringify(body), {
     status,
