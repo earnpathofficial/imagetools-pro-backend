@@ -12,10 +12,21 @@ headers: {
 });
 }
 
+function corsResponse() {
+return new Response(null, {
+status: 204,
+headers: {
+"Access-Control-Allow-Origin": "https://earnpathofficial.github.io",
+"Access-Control-Allow-Methods": "POST, OPTIONS",
+"Access-Control-Allow-Headers": "Content-Type"
+}
+});
+}
+
 export default async function handler(request) {
 
 if (request.method === "OPTIONS") {
-return jsonResponse(204, {});
+return corsResponse();
 }
 
 if (request.method !== "POST") {
